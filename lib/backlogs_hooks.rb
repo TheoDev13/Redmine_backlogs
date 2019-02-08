@@ -47,7 +47,7 @@ module BacklogsPlugin
               end
 
             when 'issues#index'
-              q = context[:request].session[:issue_query]
+              q = context[:request].session[:query]
               sprint = (q && q[:filters]) ? q[:filters]['fixed_version_id'] : nil
               if sprint && sprint[:operator] == '=' && sprint[:values].size == 1
                 sprint_id = sprint[:values][0]
@@ -87,32 +87,30 @@ module BacklogsPlugin
           return '' unless Backlogs.configured?(issue.project)
 
           snippet = ''
-          snippet += "<div class=\"splitcontent\">"
-          snippet += "<div class=\"splitcontentleft\">"
 
           project = context[:project]
 
           if issue.is_story?
-            snippet += "<div class=\"story_point attribute\"><div class=\"label\"><span>#{l(:field_story_points)}</span>:</div><div class=\"value\">#{RbStory.find(issue.id).points_display}</div></div>"
+            snippet += "<tr><th>#{l(:field_story_points)}</th><td>#{RbStory.find(issue.id).points_display}</td>"
             unless issue.remaining_hours.nil?
-              snippet += "<div class=\"remaining_hours attribute\"><div class=\"label\"><span>#{l(:field_remaining_hours)}</span>:</div><div class=\"value\">#{l_hours(issue.remaining_hours)}</div></div>"
+              snippet += "<th>#{l(:field_remaining_hours)}</th><td>#{l_hours(issue.remaining_hours)}</td>"
             end
+            snippet += "</tr>"
             vbe = issue.velocity_based_estimate
-            snippet += "<div class=\"velocity_based_estimate attribute\"><div class=\"label\"><span>#{l(:field_velocity_based_estimate)}</span>:</div><div class=\"value\">#{vbe ? vbe.to_s + ' days' : '-'}</div></div>"
+            snippet += "<tr><th>#{l(:field_velocity_based_estimate)}</th><td>#{vbe ? vbe.to_s + ' days' : '-'}</td></tr>"
 
             unless issue.release_id.nil?
               release = RbRelease.find(issue.release_id)
-              snippet += "<div class=\"release attribute\"><div class=\"label\"><span>#{l(:field_release)}</span>:</div><div class=\"value\">#{link_to(release.name, url_for_prefix_in_hooks + url_for({:controller => 'rb_releases', :action => 'show', :release_id => release}))}</div></div>"
+              snippet += "<tr><th>#{l(:field_release)}</th><td>#{link_to(release.name, url_for_prefix_in_hooks + url_for({:controller => 'rb_releases', :action => 'show', :release_id => release}))}</td>"
               relation_translate = l("label_release_relationship_#{RbStory.find(issue.id).release_relationship}")
-              snippet += "<div class=\"release_relationship attribute\"><div class=\"label\"><span>#{l(:field_release_relationship)}</span>:</div><div class=\"value\">#{relation_translate}</div></div>"
+              snippet += "<th>#{l(:field_release_relationship)}</th><td>#{relation_translate}</td></tr>"
             end
           end
 
           if issue.is_task? && User.current.allowed_to?(:update_remaining_hours, project) != nil
-            snippet += "<div class=\"release_relationship attribute\"><div class=\"label\"><span>#{l(:field_remaining_hours)}</span>:</div><div class=\"value\">#{issue.remaining_hours}</div></div>"
+            snippet += "<tr><th>#{l(:field_remaining_hours)}</th><td>#{issue.remaining_hours}</td></tr>"
           end
-          snippet += "</div>"
-          snippet += "</div>"
+
           return snippet
         rescue => e
           exception(context, e)
@@ -198,7 +196,7 @@ module BacklogsPlugin
         #Remove the copy_subtasks functionality from redmine 2.1+ since backlogs offers it with a choice to copy only open tasks
         project = context[:project]
         return '' unless project.module_enabled?('backlogs')
-        return '<script type="text/javascript">$(function(){try{$("#copy_subtasks")[0].checked=false;$($("#copy_subtasks")[0].parentNode).hide();}catch(e){}});</script>'
+        return '<script type="text/javascript">$(function(){try{$("#copy_subtasks")[0].checked=false;$($("#copy_subtasks")[0].parentNode).hide();}catch(e){}});</script>' if (Redmine::VERSION::MAJOR == 2 && Redmine::VERSION::MINOR >= 1) || Redmine::VERSION::MAJOR > 2
       end
 
       def view_issues_bulk_edit_details_bottom(context={ })

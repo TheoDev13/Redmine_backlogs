@@ -2,7 +2,7 @@
 class RbApplicationController < ApplicationController
   unloadable
 
-  before_filter :load_project, :authorize, :check_if_plugin_is_configured
+  before_action :load_project, :authorize, :check_if_plugin_is_configured
 
   #provide list of javascript_include_tags which must be rendered before common.js
   def rb_jquery_plugins
@@ -35,13 +35,9 @@ class RbApplicationController < ApplicationController
 
   def check_if_plugin_is_configured
     @settings = Backlogs.settings
-#    make a copy to workaround RuntimeError (can't modify frozen ActionController::Parameters):
-    s1 = @settings.dup
-    if (s1[:story_trackers].blank? && s1['story_trackers'].blank?) || (s1[:task_tracker].blank? && s1['task_tracker'].blank?)
-      puts("check_if_plugin_is_configured: something is blank, halting. #{s1}")
+    if @settings[:story_trackers].blank? || @settings[:task_tracker].blank?
       respond_to do |format|
-        format.html { render :template => "backlogs/not_configured",  :handlers => [:erb], :formats => [:html] }
-        format.js { }
+        format.html { render :file => "backlogs/not_configured" }
       end
     end
   end

@@ -33,7 +33,7 @@ module Backlogs
 
     module InstanceMethods
       def history
-        @history ||= RbIssueHistory.where(:issue_id => self.id).first_or_initialize
+        @history ||= RbIssueHistory.find_or_create_by_issue_id(self.id)
       end
 
       def release_burnchart_day_caches(release_id)
@@ -41,13 +41,13 @@ module Backlogs
       end
 
       def is_story?
-        RbStory.trackers_include?(tracker_id)
+        return RbStory.trackers.include?(tracker_id)
       end
 
       def is_task?
-        RbTask.tracker?(tracker_id)
+        return (tracker_id == RbTask.tracker)
       end
-
+      
       def backlogs_issue_type
         return "story" if self.is_story?
         return "impediment" if self.blocks(true).any?
@@ -71,8 +71,7 @@ module Backlogs
               @rb_story = parent.story
             end
           else
-            @rb_story = Issue.where("root_id = ? and lft < ? and rgt > ? and tracker_id in (?)", root_id, lft, rgt, RbStory.trackers)
-                              .order('lft DESC').first
+            @rb_story = Issue.find(:first, :order => 'lft DESC', :conditions => [ "root_id = ? and lft < ? and rgt > ? and tracker_id in (?)", root_id, lft, rgt, RbStory.trackers ])
             @rb_story = @rb_story.becomes(RbStory) if @rb_story
           end
         end
@@ -112,10 +111,10 @@ module Backlogs
             self.remaining_hours = self.estimated_hours if self.remaining_hours.blank?
             self.estimated_hours = self.remaining_hours if self.estimated_hours.blank?
 
-            self.remaining_hours = 0 if self.status.backlog_is?(:success, self.tracker)
+            self.remaining_hours = 0 if self.status.backlog_is?(:success)
 
             self.fixed_version = self.story.fixed_version if self.story
-            self.start_date = Date.today if self.start_date.blank? && self.status_id != self.tracker.default_status.id
+            self.start_date = Date.today if self.start_date.blank? && self.status_id != IssueStatus.default.id
 
             self.tracker = Tracker.find(RbTask.tracker) unless self.tracker_id == RbTask.tracker
           elsif self.is_story? && Backlogs.setting[:set_start_and_duedates_from_sprint]
@@ -167,7 +166,7 @@ module Backlogs
           # raw sql and manual journal here because not
           # doing so causes an update loop when Issue calls
           # update_parent :<
-          tasklist = RbTask.where("root_id=? and lft>? and rgt<? and
+          tasklist = RbTask.find(:all, :conditions => ["root_id=? and lft>? and rgt<? and
                                           (
                                             (? is NULL and not fixed_version_id is NULL)
                                             or
@@ -179,12 +178,12 @@ module Backlogs
                                           )", self.root_id, self.lft, self.rgt,
                                               self.fixed_version_id, self.fixed_version_id,
                                               self.fixed_version_id, self.fixed_version_id,
-                                              RbTask.tracker).all.to_a
+                                              RbTask.tracker]).to_a
           tasklist.each{|task| task.history.save! }
           if tasklist.size > 0
-            task_ids = '(' + tasklist.collect{|task| self.class.connection.quote(task.id)}.join(',') + ')'
-            self.class.connection.execute("update issues set
-                                updated_on = #{self.class.connection.quote(self.updated_on)}, fixed_version_id = #{self.class.connection.quote(self.fixed_version_id)}, tracker_id = #{RbTask.tracker}
+            task_ids = '(' + tasklist.collect{|task| connection.quote(task.id)}.join(',') + ')'
+            connection.execute("update issues set
+                                updated_on = #{connection.quote(self.updated_on)}, fixed_version_id = #{connection.quote(self.fixed_version_id)}, tracker_id = #{RbTask.tracker}
                                 where id in #{task_ids}")
           end
         end

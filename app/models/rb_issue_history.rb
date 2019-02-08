@@ -2,7 +2,6 @@ require 'pp'
 
 class RbIssueHistory < ActiveRecord::Base
   self.table_name = 'rb_issue_history'
-  attr_protected :created_at # hack, all attributes will be mass asigment
   belongs_to :issue
 
   serialize :history, Array
@@ -29,9 +28,9 @@ class RbIssueHistory < ActiveRecord::Base
 
   def self.statuses
     Hash.new{|h, k|
-      s = IssueStatus.where(:id => k.to_i).take
+      s = IssueStatus.find_by_id(k.to_i)
       if s.nil?
-        s = IssueStatus.first
+        s = IssueStatus.default
         puts "IssueStatus #{k.inspect} not found, using default #{s.id} instead"
       end
       h[k] = {:id => s.id, :open => ! s.is_closed?, :success => s.is_closed? ? (s.default_done_ratio.nil? || s.default_done_ratio == 100) : false }
@@ -42,7 +41,7 @@ class RbIssueHistory < ActiveRecord::Base
   def filter(sprint, status=nil)
     h = Hash[*(self.expand.collect{|d| [d[:date], d]}.flatten)]
     filtered = sprint.days.collect{|d| h[d] ? h[d] : {:date => d, :origin => :filter}}
-
+    
     # see if this issue was closed after sprint end
     if filtered[-1][:status_open]
       self.history.select{|h| h[:date] > sprint.effective_date}.each{|h|
@@ -89,14 +88,11 @@ class RbIssueHistory < ActiveRecord::Base
   end
 
   def self.issue_type(tracker_id)
-    return nil if tracker_id.blank?
-    if RbStory.trackers_include?(tracker_id)
-      :story
-    elsif RbTask.tracker?(tracker_id)
-      :task
-    else
-      nil
-    end
+    return nil if tracker_id.nil? || tracker_id == ''
+    tracker_id = tracker_id.to_i
+    return :story if RbStory.trackers && RbStory.trackers.include?(tracker_id)
+    return :task if tracker_id == RbTask.tracker
+    return nil
   end
 
   def expand
@@ -109,7 +105,7 @@ class RbIssueHistory < ActiveRecord::Base
   end
 
   def self.rebuild_issue(issue, status=nil)
-    rb = RbIssueHistory.where(:issue_id => issue.id).first_or_initialize
+    rb = RbIssueHistory.find_or_initialize_by_issue_id(issue.id)
 
     rb.history = [{:date => issue.created_on.to_date - 1, :origin => :rebuild}]
 
@@ -171,12 +167,12 @@ class RbIssueHistory < ActiveRecord::Base
         when 'release_id' then full_journal[date][:release] = {:new => j.value ? j.value.to_i : nil}
         when 'estimated_hours' then full_journal[date][:estimated_hours] = {:new => j.value ? j.value.to_f : nil}
         when 'remaining_hours' then full_journal[date][:remaining_hours] = {:new => j.value ? j.value.to_f : nil}
-
+  
         else raise "Unexpected property #{j.property}: #{j.value.inspect}"
         end
-
+  
         #:status_id is not in rb_journals
-
+  
         full_journal[date][:tracker] ||= {:new =>
           case
           when issue.is_story? then :story
@@ -200,7 +196,7 @@ class RbIssueHistory < ActiveRecord::Base
     }
 
     # Wouldn't be needed if redmine just created journals for update_parent_properties
-    subissues = Issue.where(parent_id: issue.id).to_a
+    subissues = Issue.find(:all, :conditions => ['parent_id = ?', issue.id]).to_a
     subhists = []
     subdates = []
     subissues.each{|i|
@@ -310,7 +306,7 @@ class RbIssueHistory < ActiveRecord::Base
 
     if rb.history.detect{|h| h[:tracker] == :story }
       rb.history.collect{|h| h[:sprint] }.compact.uniq.each{|sprint_id|
-        sprint = RbSprint.find(sprint_id.to_i)
+        sprint = RbSprint.find_by_id(sprint_id)
         next unless sprint
         sprint.burndown.touch!(issue.id)
       }
@@ -320,17 +316,17 @@ class RbIssueHistory < ActiveRecord::Base
   def self.rebuild
     RbSprintBurndown.delete_all
 
-    status = self.statuses # self.class.statuses ???
+    status = self.statuses
 
     issues = Issue.count
-    begin
-      Issue.order('root_id asc, lft desc').each_with_index{|issue, n|
-        puts "#{issue.id.to_s.rjust(6, ' ')} (#{(n+1).to_s.rjust(6, ' ')}/#{issues})..."
-        RbIssueHistory.rebuild_issue(issue, status)
-      }
-    rescue ActiveRecord::RecordNotFound => e
-      Rails.logger.warn e; Rails.logger.warn e.backtrace.join("\n");
-    end
+    Issue.order('root_id asc, lft desc').find(:all).each_with_index{|issue, n|
+      puts "#{issue.id.to_s.rjust(6, ' ')} (#{(n+1).to_s.rjust(6, ' ')}/#{issues})..."
+      RbIssueHistory.rebuild_issue(issue, status)
+    }
+    #Issue.find(:all, :order => 'root_id asc, lft desc').each_with_index{|issue, n|
+    #  puts "#{issue.id.to_s.rjust(6, ' ')} (#{(n+1).to_s.rjust(6, ' ')}/#{issues})..."
+    #  RbIssueHistory.rebuild_issue(issue, status)
+    #}
   end
 
   def init_history
@@ -373,12 +369,8 @@ class RbIssueHistory < ActiveRecord::Base
 
   def touch_sprint
     self.history.select{|h| h[:sprint]}.uniq{|h| "#{h[:sprint]}::#{h[:tracker]}"}.each{|h|
-      begin
-        sprint = RbSprint.find(h[:sprint].to_i)
-        next unless sprint
-      rescue
-        next
-      end
+      sprint = RbSprint.find_by_id(h[:sprint])
+      next unless sprint
       sprint.burndown.touch!(h[:tracker] == :story ? self.issue.id : nil)
     }
   end
@@ -398,7 +390,7 @@ class RbIssueHistory < ActiveRecord::Base
       date ||= self.history[0][:date] # the after_create calls this function without a parameter, so we know it's the creation call. Get the `yesterday' entry.
       parent_history_index = p.history.history.index{|d| d[:date] == date} # does the parent have an history entry on that date?
       if parent_history_index.nil? # if not, stretch the history to get the values at that date
-        parent_data = p.history.expand.detect{|d| d[:date] == date}
+        parent_data = p.history.expand.detect{|d| d[:date] == date} 
       else # if so, grab that entry
         parent_data = p.history.history[parent_history_index]
       end

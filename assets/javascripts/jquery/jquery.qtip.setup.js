@@ -4,21 +4,15 @@ $.qtipMakeOptions = function(container, ajax) {
             text: container.children('div.tooltip_text')
         },
         position: {
-            my: 'left top',
-            at: 'center rigth',
+            my: 'top left',
             target: 'mouse',
             viewport: RB.$(window), // Keep it on-screen at all times if possible
             adjust: {
-              x: 10,
-              y: -2,
-              method: 'shift shift'
+                x: 10,  y: 10
             }
         },
         hide: {
            fixed: true // Helps to prevent the tooltip from hiding ocassionally when tracking!
-        },
-        style: {
-            classes: 'qtip-light qtip-shadow'
         }
     };
     if (ajax) {
@@ -28,7 +22,7 @@ $.qtipMakeOptions = function(container, ajax) {
               ajax: {
                 url: RB.urlFor('show_tooltip', {id: id}),
                 type: 'GET',
-                data: { project_id: RB.constants.project_id }, //to satisfy before_filter and authorize
+                data: { project_id: RB.constants.project_id }, //to satisfy before_action and authorize
                 once: true
               }
             };

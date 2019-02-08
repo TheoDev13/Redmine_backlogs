@@ -19,7 +19,9 @@ When /^I (post|put|get) the "(.+)" page using format "(.+)"$/ do |method,url, fo
 end
 
 Then /^application should route me to:$/ do |controller|
-  @routes = Rails.application.routes # workaround for assert_recognizes bug
+  if Rails::VERSION::MAJOR >= 3
+    @routes = Rails.application.routes # workaround for assert_recognizes bug
+  end
   controller = controller.transpose
   # convert headers to symbols
   controller.map_headers! { |header| header.to_sym }
@@ -30,9 +32,8 @@ Then /^application should route me to:$/ do |controller|
   url = url_for(controller_with_params)
   if @method == 'put'
     put url, controller_with_params
-  elsif @method == 'get'
-    get url, controller_with_params
   else
     post url, controller_with_params
   end
 end
+

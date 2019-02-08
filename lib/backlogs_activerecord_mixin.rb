@@ -1,8 +1,6 @@
 module Backlogs
   module ActiveRecord
     def add_condition(options, condition, conjunction = 'AND')
-      #puts("add_condition op=#{options} cond=#{condition} conj=#{conjunction}")
-      #4/0
       if condition.is_a? String
         add_condition(options, [condition], conjunction)
       elsif condition.is_a? Hash
@@ -30,7 +28,8 @@ module Backlogs
 
       def available_custom_fields
         klass = self.class.respond_to?(:rb_sti_class) ? self.class.rb_sti_class : self.class
-        CustomField.where("type = '#{klass.name}CustomField'").order('position')
+        #CustomField.find(:all, :conditions => "type = '#{klass.name}CustomField'", :order => 'position')
+        CustomField.where("type = '#{klass.name}CustomField'").order('position').find_all()
       end
 
       def journalized_update_attributes!(attribs)
@@ -60,14 +59,12 @@ module Backlogs
           class_eval <<-EOV
             include Backlogs::ActiveRecord::ListWithGaps::InstanceMethods
 
-            scope :backlog_scope, lambda{|opts={}| where(nil) }
-
             def self.list_spacing
               #{options[:spacing]}
             end
 
-            def self.find_by_rank(r) #this is a scope, used only in tests. combine with backlogs_scope for project/sprint options
-              self.order('#{self.table_name}.position').limit(1).offset(r - 1).first
+            def self.find_by_rank(r, options)
+              self.find(:first, options.merge(:order => '#{self.table_name}.position', :limit => 1, :offset => r - 1))
             end
 
             before_create  :move_to_#{options[:default]}
@@ -76,51 +73,53 @@ module Backlogs
       end
 
       module InstanceMethods
-        def move_to_top()
+        def move_to_top(options={})
           top = self.class.minimum(:position)
           return if self.position == top && !top.blank?
           self.position = top.blank? ? 0 : (top - self.class.list_spacing)
           list_commit
         end
 
-        def move_to_bottom()
+        def move_to_bottom(options={})
           bottom = self.class.maximum(:position)
           return if self.position == bottom && !bottom.blank?
           self.position = bottom.blank? ? 0 : (bottom + self.class.list_spacing)
           list_commit
         end
 
-        def first()
-          return self.class.find_by_position(self.class.minimum(:position))
+        def first(options = {})
+          return self.class.find_by_position(self.class.minimum(:position, options))
         end
 
-        def last()
-          return self.class.find_by_position(self.class.maximum(:position))
+        def last(options = {})
+          return self.class.find_by_position(self.class.maximum(:position, options))
         end
 
-        def higher_item()
-          @higher_item ||= list_prev_next(:prev)
+        def higher_item(options={})
+          @higher_item ||= list_prev_next(:prev, self.list_with_gaps_scope_condition(options))
         end
         attr_writer :higher_item
 
-        def lower_item()
-          @lower_item ||= list_prev_next(:next)
+        def lower_item(options={})
+          @lower_item ||= list_prev_next(:next, self.list_with_gaps_scope_condition(options))
         end
         attr_writer :lower_item
 
-        def list_with_gaps_options
-          {}
+        # higher_item and lower_item use this scope condition to determine neighbours
+        # to be overloaded
+        def list_with_gaps_scope_condition(options={})
+          options
         end
 
         def rank
           @rank ||= self.class.
-            backlog_scope(self.list_with_gaps_options).
+            scoped(self.list_with_gaps_scope_condition).
             where(["#{self.class.table_name}.position <= ?", self.position]).
             count
         end
         attr_writer :rank
 
-        def move_after(reference)
+        def move_after(reference, options={})
           nxt = reference.send(:lower_item_unscoped)
 
           if nxt.blank?
@@ -138,8 +137,9 @@ module Backlogs
 
         #issues are listed by position ascending, which is in rank descending. Higher means lower position
         #before means lower position
-        def move_before(reference)
+        def move_before(reference, options={})
           prev = reference.send(:higher_item_unscoped)
+
           if prev.blank?
             move_to_top
           else
@@ -158,12 +158,12 @@ module Backlogs
       private
 
       #higher item is the one with lower position. self is visually displayed below its higher item.
-      def higher_item_unscoped()
-        @higher_item_unscoped ||= list_prev_next(:prev, false)
+      def higher_item_unscoped(options = {})
+        @higher_item_unscoped ||= list_prev_next(:prev, options)
       end
 
-      def lower_item_unscoped()
-        @lower_item_unscoped ||= list_prev_next(:next, false)
+      def lower_item_unscoped(options = {})
+        @lower_item_unscoped ||= list_prev_next(:next, options)
       end
 
       def list_commit
@@ -171,20 +171,13 @@ module Backlogs
         #FIXME now the cached lower/higher_item are wrong during this request. So are those from our old and new peers.
       end
 
-      def list_prev_next(dir, scoped=true)
+      def list_prev_next(dir, options)
         return nil if self.new_record?
         raise "#{self.class}##{self.id}: cannot request #{dir} for nil position" unless self.position
-        whereclause = ["#{self.class.table_name}.position #{dir == :prev ? '<' : '>'} ?", self.position]
-        orderclause = "#{self.class.table_name}.position #{dir == :prev ? 'desc' : 'asc'}"
-
-        if scoped
-          sc = self.class.backlog_scope(self.list_with_gaps_options)
-        else
-          sc = self.class
-        end
-        return sc.
-          where(whereclause).
-          order(orderclause).first
+        options = options.dup
+        Backlogs::ActiveRecord.add_condition(options, ["#{self.class.table_name}.position #{dir == :prev ? '<' : '>'} ?", self.position])
+        options[:order] = "#{self.class.table_name}.position #{dir == :prev ? 'desc' : 'asc'}"
+        return self.class.find(:first, options)
       end
 
     end

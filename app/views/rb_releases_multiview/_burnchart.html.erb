@@ -1,7 +1,3 @@
-<%-
-    burnchart = release_multiview.burnchart
-    if burnchart
-%>
 <div style="<%= style %>" class="burndown_chart" id="burndown_<%= release_multiview.id %>"><div class="loading">Generating chart...</div></div>
 
 <style type="text/css" media="screen">
@@ -18,6 +14,7 @@
 
 <script type="text/javascript" language="javascript">
   <%-
+    burnchart = release_multiview.burnchart
     series = burnchart.total_series  + [burnchart.closed_series] +
       burnchart.estimate_series
     names = burnchart.total_series_names << l("label_points_accepted")
@@ -53,6 +50,3 @@ RB.$(function() { // render when dom is ready
   RB.burndown.initialize();
 });
 </script>
-<%-
-  end
-%>
