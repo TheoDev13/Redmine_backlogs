@@ -1,16 +1,16 @@
 REDMINE BACKLOGS VERSION 4.0.1 in Ruby 2.6 on Rails 5.2.2
 ---------------------------------------------------------
 
-.. WARNING::
-************
+WARNING
+*******
    Veuillez ne pas télécharger ce fork qui n'est pas fonctionnel
 
 Ce fork a pour but de mettre à jour redmine_backlogs afin d'être compatible avec les technologies actuelles.
 Néanmoins ce fork est installable mais contient de nombreux bugs qui ne pourront pas vous permettre de le faire fonctionner.
 Veuillez attendre les ajouts/modifications de code afin que celui-ci soit fonctionnel.
 
-.. IMPORTANT::
-**************
+IMPORTANT
+*********
    Compatibilité : 20%
 
 Je modifierais ce pourcentage.
